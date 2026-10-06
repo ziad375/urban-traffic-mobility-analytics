@@ -28,3 +28,9 @@ spark-warehouse/
 metastore_db/
 
 !taxi_zone_lookup.csv
+
+# Superset secrets
+superset/.env
+
+# Local exports
+zone_hour_export/

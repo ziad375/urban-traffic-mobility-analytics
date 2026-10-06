@@ -150,6 +150,33 @@ services:
       - clickhouse_data:/var/lib/clickhouse
     networks:
       - bigdata
+    
+  superset:
+    build:
+      context: ./superset
+      dockerfile: Dockerfile
+    container_name: superset
+    depends_on:
+      - clickhouse
+    env_file:
+      - ./superset/.env
+    environment:
+      SUPERSET_LOAD_EXAMPLES: "false"
+    ports:
+      - "8088:8088"
+    volumes:
+      - superset_home:/app/superset_home
+    command:
+      - /bin/sh
+      - -c
+      - |
+        superset db upgrade &&
+        (superset fab create-admin --username "$$SUPERSET_ADMIN_USERNAME" --firstname Admin --lastname User --email "$$SUPERSET_ADMIN_EMAIL" --password "$$SUPERSET_ADMIN_PASSWORD" || true) &&
+        superset init &&
+        /usr/bin/run-server.sh
+    networks:
+      - bigdata
+
 
 
 # =========================
@@ -161,6 +188,7 @@ volumes:
   datanode_data:
   postgres_data:
   clickhouse_data:
+  superset_home:
 
 
 # =========================
