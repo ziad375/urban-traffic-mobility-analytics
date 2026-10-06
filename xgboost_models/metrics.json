@@ -1,0 +1,40 @@
+{
+  "trips": {
+    "MAE": 5.545031061910636,
+    "RMSE": 13.60421542104565,
+    "R2": 0.9566573429892686,
+    "train_sample_rows": 312413,
+    "test_sample_rows": 88859,
+    "features": [
+      "pu_zone",
+      "pickup_hour",
+      "day_of_week",
+      "day_of_month",
+      "month",
+      "year",
+      "date_number",
+      "prev_trips",
+      "prev_revenue",
+      "hours_since_prev"
+    ]
+  },
+  "total_revenue": {
+    "MAE": 192.26536913079443,
+    "RMSE": 620.7572713158102,
+    "R2": 0.9399097019659319,
+    "train_sample_rows": 312413,
+    "test_sample_rows": 88859,
+    "features": [
+      "pu_zone",
+      "pickup_hour",
+      "day_of_week",
+      "day_of_month",
+      "month",
+      "year",
+      "date_number",
+      "prev_trips",
+      "prev_revenue",
+      "hours_since_prev"
+    ]
+  }
+}

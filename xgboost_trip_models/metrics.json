@@ -1,0 +1,40 @@
+{
+  "duration_min": {
+    "MAE": 4.155125059181881,
+    "RMSE": 7.169159276769722,
+    "R2": 0.7936421597250249,
+    "train_sample_rows": 1334479,
+    "test_sample_rows": 277228,
+    "features": [
+      "pu_zone",
+      "do_zone",
+      "passenger_count",
+      "trip_distance",
+      "pickup_hour",
+      "day_of_week",
+      "month",
+      "year",
+      "is_weekend"
+    ],
+    "target": "duration_min"
+  },
+  "total_amount": {
+    "MAE": 3.8145764635940753,
+    "RMSE": 7.10149211387464,
+    "R2": 0.9019696520632394,
+    "train_sample_rows": 1334479,
+    "test_sample_rows": 277228,
+    "features": [
+      "pu_zone",
+      "do_zone",
+      "passenger_count",
+      "trip_distance",
+      "pickup_hour",
+      "day_of_week",
+      "month",
+      "year",
+      "is_weekend"
+    ],
+    "target": "total_amount"
+  }
+}

@@ -1,0 +1,172 @@
+services:
+
+  # =========================
+  # HDFS
+  # =========================
+
+  
+  namenode:
+    image: apache/hadoop:3.3.6
+    container_name: namenode
+    hostname: namenode
+    user: root
+    command: ["hdfs", "namenode"]
+    ports:
+      - "9870:9870"
+      - "8020:8020"
+    volumes:
+      - namenode_data:/opt/hadoop/dfs/name
+      - ./hadoop-config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./hadoop-config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    networks:
+      - bigdata
+
+  datanode:
+    image: apache/hadoop:3.3.6
+    container_name: datanode
+    hostname: datanode
+    user: root
+    command: ["hdfs", "datanode"]
+    ports:
+      - "9864:9864"
+    volumes:
+      - datanode_data:/opt/hadoop/dfs/data
+      - ./hadoop-config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./hadoop-config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    depends_on:
+      - namenode
+    networks:
+      - bigdata
+
+
+  # =========================
+  # Spark
+  # =========================
+
+  spark-master:
+    image: bitnamilegacy/spark:3.5
+    container_name: spark-master
+    hostname: spark-master
+    user: root
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+      - HOME=/tmp
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    networks:
+      - bigdata
+
+  spark-worker:
+    image: bitnamilegacy/spark:3.5
+    container_name: spark-worker
+    hostname: spark-worker
+    user: root
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_CORES=2
+      - HOME=/tmp
+    depends_on:
+      - spark-master
+    ports:
+      - "8081:8081"
+    networks:
+      - bigdata
+
+
+  # =========================
+  # Airflow Database
+  # =========================
+
+      # =========================
+  # Airflow Database
+  # =========================
+
+  postgres:
+    image: postgres:15
+    container_name: airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      retries: 10
+    networks:
+      - bigdata
+
+  # =========================
+  # Airflow
+  # =========================
+
+  airflow:
+    image: apache/airflow:2.10.4
+    container_name: airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+    command: >
+      bash -c "
+      airflow db migrate &&
+      (airflow users create --username admin --password admin
+      --firstname Admin --lastname User --role Admin
+      --email admin@example.com || true) &&
+      (airflow scheduler &) &&
+      exec airflow webserver
+      "
+    networks:
+      - bigdata
+
+  # =========================
+  # ClickHouse
+  # =========================
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: clickhouse
+    hostname: clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - bigdata
+
+
+# =========================
+# Volumes
+# =========================
+
+volumes:
+  namenode_data:
+  datanode_data:
+  postgres_data:
+  clickhouse_data:
+
+
+# =========================
+# Network
+# =========================
+
+networks:
+  bigdata:
+    driver: bridge

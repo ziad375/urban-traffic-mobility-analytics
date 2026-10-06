@@ -1,0 +1,30 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Raw and generated data
+data/
+*.parquet
+*.csv
+*.log
+*.tmp
+
+# Python / IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Generated Spark / Hadoop outputs
+spark-warehouse/
+metastore_db/
+
+!taxi_zone_lookup.csv

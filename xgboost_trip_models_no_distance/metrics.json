@@ -1,0 +1,36 @@
+{
+  "duration_min": {
+    "MAE": 6.3864551741242455,
+    "RMSE": 10.415708460573379,
+    "R2": 0.5644258014202148,
+    "train_sample_rows": 1334479,
+    "test_sample_rows": 277228,
+    "features": [
+      "pu_zone",
+      "do_zone",
+      "pickup_hour",
+      "day_of_week",
+      "month",
+      "year",
+      "is_weekend"
+    ],
+    "target": "duration_min"
+  },
+  "total_amount": {
+    "MAE": 6.789568898949555,
+    "RMSE": 11.090592943843532,
+    "R2": 0.7609048000469116,
+    "train_sample_rows": 1334479,
+    "test_sample_rows": 277228,
+    "features": [
+      "pu_zone",
+      "do_zone",
+      "pickup_hour",
+      "day_of_week",
+      "month",
+      "year",
+      "is_weekend"
+    ],
+    "target": "total_amount"
+  }
+}
