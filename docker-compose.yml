@@ -1,4 +1,4 @@
-services:
+﻿services:
 
   # =========================
   # HDFS
@@ -108,8 +108,12 @@ services:
   # Airflow
   # =========================
 
+  
   airflow:
-    image: apache/airflow:2.10.4
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+    image: nyc-traffic-airflow:2.10.4
     container_name: airflow
     depends_on:
       postgres:
@@ -119,10 +123,15 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      HADOOP_CONF_DIR: /opt/hadoop/etc/hadoop
     ports:
       - "8085:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
+      - ./etl_clean.py:/opt/airflow/etl_clean.py:ro
+      - ./etl_clean_staging.py:/opt/airflow/etl_clean_staging.py:ro
+      - ./hadoop-config:/opt/hadoop/etc/hadoop:ro
     command: >
       bash -c "
       airflow db migrate &&
