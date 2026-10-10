@@ -1,4 +1,4 @@
-
+import os
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from functools import reduce
@@ -10,8 +10,15 @@ spark = (
     .getOrCreate()
 )
 
+
 RAW = "hdfs://namenode:8020/data/nyc/raw/"
-PROCESSED = "hdfs://namenode:8020/data/nyc/staging/etl_clean/"
+PROCESSED = os.environ.get(
+    "ETL_OUTPUT_BASE",
+    "hdfs://namenode:8020/data/nyc/staging/etl_clean/"
+)
+
+if not PROCESSED.endswith("/"):
+    PROCESSED += "/"
 
 
 # ---------- 1) Read ----------
