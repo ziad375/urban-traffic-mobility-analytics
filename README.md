@@ -380,8 +380,11 @@ Possible future improvements include:
 ## Author
 
 **Farouk Sameh Mostafa**
+
 **Mostafa Ahmed**
+
 **Ziad Sherif**
+
 **Gaber Tahoon**
 
 ---
