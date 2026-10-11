@@ -11,7 +11,9 @@ __pycache__/
 !.env.example
 
 # Raw and generated data
-data/
+# (data/* instead of data/ so the lookup file below can be re-included)
+data/*
+!data/taxi_zone_lookup.csv
 *.parquet
 *.csv
 *.log

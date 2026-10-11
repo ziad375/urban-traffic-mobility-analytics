@@ -1,8 +1,22 @@
+"""
+Streamlit app: NYC Taxi Trip Predictor.
 
+The user picks pickup/drop-off zones, distance, passengers, date and time; the app
+builds one feature row and asks two XGBoost models (models/trip_models) for the
+estimated trip duration (minutes) and total amount (USD).
+
+Run from the project root:  streamlit run app/app.py
+"""
 import streamlit as st
 import pandas as pd
 import xgboost as xgb
 from datetime import date, time
+from pathlib import Path
+
+# Paths are resolved from this file so the app works from any working directory.
+ROOT = Path(__file__).resolve().parent.parent
+ZONES_CSV = ROOT / "data" / "taxi_zone_lookup.csv"
+MODEL_DIR = ROOT / "models" / "trip_models"  # model trained WITH distance + passengers
 
 # ==================== PAGE CONFIG ====================
 st.set_page_config(
@@ -158,8 +172,11 @@ st.markdown("""
 # ==================== DATA ====================
 @st.cache_data
 def load_zones():
+    """Load the taxi-zone lookup (LocationID -> borough / zone) and build dropdown labels."""
+    # The CSV already has a header row; reading with header=None turns it into a
+    # non-numeric row that is dropped by the to_numeric/dropna step below.
     zones = pd.read_csv(
-        "taxi_zone_lookup.csv",
+        ZONES_CSV,
         header=None,
         names=["LocationID", "Borough", "Zone", "service_zone"]
     )
@@ -183,14 +200,15 @@ def load_zones():
 
 @st.cache_resource
 def load_models():
+    """Load the saved duration and total-amount XGBoost models (cached across reruns)."""
     duration_model = xgb.Booster()
     duration_model.load_model(
-        "xgboost_trip_models/duration_min_xgboost.json"
+        str(MODEL_DIR / "duration_min_xgboost.json")
     )
 
     amount_model = xgb.Booster()
     amount_model.load_model(
-        "xgboost_trip_models/total_amount_xgboost.json"
+        str(MODEL_DIR / "total_amount_xgboost.json")
     )
 
     return duration_model, amount_model
@@ -204,7 +222,7 @@ except Exception as e:
     st.stop()
 
 if zones.empty:
-    st.error("No taxi zones were found in taxi_zone_lookup.csv.")
+    st.error(f"No taxi zones were found in {ZONES_CSV.name}.")
     st.stop()
 
 
@@ -312,6 +330,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 
 # ==================== PREDICTION ====================
+# Runs when the form is submitted: map the inputs to the training features and predict.
 if submitted:
     try:
         pickup_zone = int(

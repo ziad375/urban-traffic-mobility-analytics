@@ -1,396 +1,212 @@
 # NYC Traffic & Mobility Analytics
 
-A Big Data analytics project for processing and analyzing large-scale NYC taxi trip data using a distributed data processing pipeline.
+An end-to-end Big Data project on NYC yellow-taxi trips. Raw trip data is stored in **HDFS**, cleaned and aggregated with **Spark**, orchestrated by **Airflow**, explored in **Superset** dashboards (via **ClickHouse**), and used to train **XGBoost** models that power a **Streamlit** trip predictor.
 
-The project demonstrates an end-to-end Big Data workflow including data ingestion, distributed storage, ETL processing, workflow orchestration, analytical storage, and interactive visualization.
+## What you get
 
----
-
-## Project Overview
-
-The goal of this project is to build a scalable data pipeline for NYC taxi trip data and generate useful mobility insights such as:
-
-- Total number of trips
-- Total revenue
-- Average trip speed
-- Average trip duration
-- Trips by hour
-- Daily trip trends
-- Top pickup zones by number of trips
-- Top pickup zones by revenue
-- Geographic zone analysis using NYC Taxi Zone names
-
-The project uses Docker to run the main Big Data components in an integrated environment.
-
----
+- **Dashboard** (Superset): total trips, total revenue, average speed and duration, daily trends, trips by hour, top pickup zones by trips and by revenue, with filters for time range, hour and zone.
+- **Trip predictor** (Streamlit): estimates the duration and total fare of a trip from pickup/drop-off zone, distance, passengers, date and time.
+- **Forecasting models**: XGBoost models for trips and revenue per pickup zone and hour.
+- **Data-quality report**: the ETL prints how many rows break each cleaning rule before removing them.
 
 ## Architecture
 
 ```text
-                 NYC Taxi Data
-                       |
-                       v
-                 +-----------+
-                 |   HDFS    |
-                 | Raw Data  |
-                 +-----------+
-                       |
-                       v
-                 +-----------+
-                 |   Spark   |
-                 |    ETL    |
-                 +-----------+
-                       |
-                       v
-              Processed Parquet Data
-                       |
-             +---------+---------+
-             |                   |
-             v                   v
-       +-----------+       +-----------+
-       | ClickHouse|       |  HDFS     |
-       | Analytics |       | Processed |
-       +-----------+       +-----------+
-             |
-             v
-       +-------------+
-       |  Superset   |
-       | Dashboard   |
-       +-------------+
-
-        Airflow orchestrates
-        the ETL workflow
-
-## Data Pipeline
-
-### 1. Data Storage
-
-Raw NYC taxi data is stored in HDFS:
-
-```text
-/data/nyc/raw
+                  NYC taxi Parquet files (local)
+                              |
+                              v
+                     +------------------+
+                     |  HDFS /raw       |
+                     +------------------+
+                              |
+        Airflow  ------>      v
+     (orchestrates)    +------------------+
+                       |  Spark ETL       |   etl/etl_clean.py
+                       +------------------+
+                              |
+                              v
+                 HDFS: trips/  and  zone_hour/
+                              |
+          +-------------------+-------------------+
+          |                                       |
+          v                                       v
+   +-------------+                      +--------------------+
+   | ClickHouse  |                      | XGBoost training   |  ml/
+   | zone_hour   |                      +--------------------+
+   +-------------+                                |
+          |                                       v
+          v                               models/*.json
+   +-------------+                                |
+   |  Superset   |                                v
+   |  dashboard  |                        +---------------+
+   +-------------+                        | Streamlit app |  app/app.py
+                                          +---------------+
 ```
 
-Processed data is stored separately:
+## Project structure
 
 ```text
-/data/nyc/processed
+.
+├── docker-compose.yml        # HDFS, Spark, Airflow (+Postgres), ClickHouse, Superset
+├── airflow/
+│   ├── Dockerfile            # Airflow image with Java + PySpark
+│   └── dags/
+│       └── nyc_traffic_pipeline.py   # DAG: checks -> ETL -> validation
+├── hadoop-config/            # core-site.xml, hdfs-site.xml shared by the containers
+├── superset/
+│   ├── Dockerfile            # Superset image with the ClickHouse driver
+│   └── .env.example          # copy to .env before starting
+├── etl/
+│   └── etl_clean.py          # Spark ETL: raw -> clean trips + zone/hour aggregates
+├── ml/
+│   ├── train_trip_models.py       # trip duration + fare models (--no-distance variant)
+│   └── train_zone_hour_models.py  # trips + revenue forecasting per zone/hour
+├── app/
+│   ├── app.py                # Streamlit trip predictor
+│   └── requirements.txt
+├── models/                   # trained XGBoost models + metrics.json
+│   ├── trip_models/                # used by the app
+│   ├── trip_models_no_distance/
+│   └── zone_hour_models/
+├── data/
+│   └── taxi_zone_lookup.csv  # LocationID -> borough / zone name
+├── docs/
+│   ├── dashboard/            # exported Superset dashboard (PDF + image)
+│   └── presentation/         # project slides
+├── original/                 # files from before they were merged (see below)
+└── unused/                   # scripts not used by the pipeline
 ```
 
-This separation keeps the raw data available while allowing the processed datasets to be used by downstream analytical systems.
+## Services and ports
 
-### 2. Apache Spark ETL
+| Service | URL / Port | Purpose |
+|---|---|---|
+| HDFS NameNode | http://localhost:9870 (RPC 8020) | HDFS web UI |
+| HDFS DataNode | 9864 | Block storage |
+| Spark Master | http://localhost:8080 (7077) | Cluster UI / job submission |
+| Spark Worker | http://localhost:8081 | Worker UI (4 GB, 2 cores) |
+| Airflow | http://localhost:8085 | Workflow UI (user `admin`, password `admin`) |
+| Superset | http://localhost:8088 | Dashboards (credentials from `superset/.env`) |
+| ClickHouse | http://localhost:8123 (native 9000) | Analytical database |
 
-Apache Spark performs the main ETL operations.
+## Getting started
 
-The ETL process includes:
+**Prerequisites:** Docker Desktop and Git. The Spark worker is configured for 4 GB of memory, so give Docker at least that much plus room for the other containers.
 
-- Reading raw Parquet data from HDFS
-- Cleaning and transforming the data
-- Preparing trip-level data
-- Generating hourly zone-level aggregations
-- Writing processed data back to HDFS
-
-Main ETL scripts:
-
-```text
-etl_clean.py
-etl_clean_staging.py
-```
-
-### 3. Apache Airflow
-
-Airflow is used to orchestrate the data pipeline.
-
-The main DAG is:
-
-```text
-airflow/dags/nyc_traffic_pipeline.py
-```
-
-The workflow contains the following stages:
-
-```text
-check_hdfs
-     |
-     v
-check_spark
-     |
-     v
-preflight_staging
-     |
-     v
-run_etl
-     |
-     v
-validate_staging
-```
-
-This ensures that the required infrastructure is available before running the ETL process and validates the generated output afterward.
-
----
-
-## ClickHouse Analytics
-
-ClickHouse is used as the analytical database for fast querying of the processed data.
-
-Main analytical table:
-
-```text
-default.zone_hour
-```
-
-The dataset contains zone-level and hourly aggregated information including:
-
-- Pickup zone
-- Pickup date
-- Pickup hour
-- Number of trips
-- Average fare
-- Average distance
-- Average trip duration
-- Average speed
-- Total revenue
-
----
-
-## NYC Taxi Zone Lookup
-
-The project uses a Taxi Zone lookup table to convert numeric pickup zone IDs into readable NYC zone names.
-
-```text
-LocationID → Zone Name
-```
-
-The lookup data is stored in:
-
-```text
-taxi_zone_lookup.csv
-```
-
-This allows the dashboard to display meaningful zone names instead of numeric IDs.
-
----
-
-## Superset Dashboard
-
-Apache Superset is used to build an interactive analytics dashboard.
-
-### Dashboard KPIs
-
-The dashboard provides:
-
-- Total Trips
-- Total Revenue
-- Average Speed
-- Average Trip Duration
-
-### Visualizations
-
-The dashboard includes:
-
-- Daily Trips Trend
-- Trips by Hour
-- Top 10 Pickup Zones by Trips
-- Top 10 Zones by Revenue
-
-The top-zone visualizations use NYC Taxi Zone names for easier interpretation.
-
-### Dashboard Filters
-
-Interactive filters include:
-
-- Time Range
-- Pickup Hour
-- Pickup Zone
-
----
-
-## Running the Project
-
-### Prerequisites
-
-Make sure the following are installed:
-
-- Docker Desktop
-- Git
-- Git Bash / Command Prompt / PowerShell
-
-Recommended system resources depend on the size of the NYC taxi dataset being processed.
-
-### Clone the Repository
+### 1. Clone and configure
 
 ```bash
 git clone https://github.com/ziad375/urban-traffic-mobility-analytics.git
 cd urban-traffic-mobility-analytics
 ```
 
-### Start the Environment
+Create the Superset settings file (it is git-ignored) and edit the password and secret key:
+
+```bash
+cp superset/.env.example superset/.env      # Windows PowerShell: copy superset\.env.example superset\.env
+```
+
+### 2. Start the stack
 
 ```bash
 docker compose up -d
-```
-
-Check the running containers:
-
-```bash
 docker compose ps
 ```
 
----
+### 3. Load the raw data into HDFS
 
-## Main Services
+The raw Parquet files are not stored in the repository. Put the monthly NYC yellow-taxi files (`yellow_tripdata_YYYY-MM.parquet`) in `/data/nyc/raw` in HDFS, for example:
 
-| Service | Port | Purpose |
-|---|---:|---|
-| HDFS NameNode | 9870 | HDFS Web UI |
-| Spark Master | 8080 | Spark Cluster UI |
-| Spark Worker | 8081 | Spark Worker UI |
-| Airflow | 8085 | Workflow management |
-| Superset | 8088 | Analytics dashboard |
-| ClickHouse | 8123 | Analytical database |
-
----
-
-## Airflow
-
-Open the Airflow interface:
-
-```text
-http://localhost:8085
+```bash
+docker exec namenode hdfs dfs -mkdir -p /data/nyc/raw
+docker cp <your-local-parquet-folder>/. namenode:/tmp/raw
+docker exec namenode sh -c "hdfs dfs -put /tmp/raw/*.parquet /data/nyc/raw/"
 ```
 
-The main DAG is:
+### 4. Run the ETL
+
+There are two ways to run `etl/etl_clean.py`. Both read `/data/nyc/raw` and write two datasets, `trips/` and `zone_hour/`.
+
+**Through Airflow (recommended for a tracked run).** Open http://localhost:8085, enable and trigger the `nyc_traffic_pipeline` DAG. It runs these steps in order:
 
 ```text
-nyc_traffic_pipeline
+check_hdfs -> check_spark -> preflight_staging -> run_etl -> validate_staging
 ```
 
-Trigger the DAG from the Airflow UI to execute the pipeline.
+Each run writes to its own folder, `/data/nyc/staging/runs/<run_id>/`, so earlier results are never overwritten.
 
----
+**Directly with spark-submit.** With no `ETL_OUTPUT_BASE` set, the output goes to `/data/nyc/processed/`, which is where the ML scripts read from:
 
-## Spark
-
-Spark Master UI:
-
-```text
-http://localhost:8080
+```bash
+docker exec airflow spark-submit \
+  --master spark://spark-master:7077 --deploy-mode client \
+  --conf spark.driver.host=airflow --conf spark.driver.bindAddress=0.0.0.0 \
+  /opt/airflow/etl_clean.py
 ```
 
-Spark Worker UI:
+Rows are removed by the ETL when they have missing zones or timestamps, a pickup year outside 2021-2026, a duration outside 1-180 minutes, a distance outside 0-100 miles, a non-positive fare, a passenger count outside 1-6, or an average speed above 80 mph.
 
-```text
-http://localhost:8081
+## Dashboard (ClickHouse + Superset)
+
+Superset reads the `zone_hour` aggregate from ClickHouse (table `default.zone_hour`). Its columns are `pu_zone`, `pickup_date`, `pickup_hour`, `trips`, `avg_fare`, `avg_distance`, `avg_duration_min`, `avg_speed_mph` and `total_revenue`.
+
+> Loading `zone_hour` from HDFS into ClickHouse and building the Superset charts is done manually; it is not scripted in this repository.
+
+`data/taxi_zone_lookup.csv` maps the numeric `LocationID` to a zone and borough name, so charts can show names such as "Midtown Center" instead of IDs. A snapshot of the finished dashboard is in `docs/dashboard/`.
+
+## Machine learning
+
+Both training scripts hold out time: they train on data before **2025-10-01** and test on data from that date onward (randomly sampled to fit in memory).
+
+| Model | Script | Features | Test metrics |
+|---|---|---|---|
+| Trip duration (min) | `ml/train_trip_models.py` | zones, passengers, distance, hour, weekday, month, year, weekend | MAE 4.16, RMSE 7.17, R² 0.79 |
+| Trip total amount ($) | `ml/train_trip_models.py` | same as above | MAE 3.82, RMSE 7.10, R² 0.90 |
+| Duration, no distance | `ml/train_trip_models.py --no-distance` | zones, hour, weekday, month, year, weekend | MAE 6.39, RMSE 10.42, R² 0.56 |
+| Total amount, no distance | `ml/train_trip_models.py --no-distance` | same as above | MAE 6.79, RMSE 11.09, R² 0.76 |
+| Trips per zone-hour | `ml/train_zone_hour_models.py` | zone, calendar fields, previous hour's trips/revenue, hours since previous | MAE 5.55, RMSE 13.60, R² 0.96 |
+| Revenue per zone-hour | `ml/train_zone_hour_models.py` | same as above | MAE 192.27, RMSE 620.76, R² 0.94 |
+
+Metrics are the values stored in each `models/*/metrics.json`.
+
+To retrain, run the script in the Spark container (the driver needs `xgboost`, `pandas` and `numpy`; install them there if they are missing) and copy the result into `models/`:
+
+```bash
+docker cp ml/train_trip_models.py spark-master:/tmp/
+docker exec spark-master spark-submit --master spark://spark-master:7077 /tmp/train_trip_models.py
+docker cp spark-master:/tmp/xgboost_trip_models/. models/trip_models/
 ```
 
----
+| Script output (inside the container) | Copy to |
+|---|---|
+| `/tmp/xgboost_trip_models` | `models/trip_models` |
+| `/tmp/xgboost_trip_models_no_distance` | `models/trip_models_no_distance` |
+| `/tmp/xgboost_models` | `models/zone_hour_models` |
 
-## HDFS
+## Trip predictor app
 
-NameNode Web UI:
-
-```text
-http://localhost:9870
+```bash
+pip install -r app/requirements.txt
+streamlit run app/app.py
 ```
 
-Main HDFS locations:
+The app uses the models in `models/trip_models/` and the zone names from `data/taxi_zone_lookup.csv`. It can be started from any folder.
 
-```text
-/data/nyc/raw
-/data/nyc/processed
-/data/nyc/staging
-```
+## Other folders
 
----
+- `original/` holds the files as they were before this reorganization: `etl_clean.py` and `etl_clean_staging.py` (merged into `etl/etl_clean.py`), `train_trip_models.py` and `train_trip_models_no_distance.py` (merged into `ml/train_trip_models.py`), and the previous `README_old.md`.
+- `unused/` holds `prepare_xgboost_data.py`, which only prints the train/test split and writes nothing.
 
-## Superset
+## Future improvements
 
-Open:
-
-```text
-http://localhost:8088
-```
-
-The main dashboard is:
-
-```text
-NYC Traffic Analytics
-```
-
----
-
-## Example Analytics
-
-The dashboard can be used to answer questions such as:
-
-- How many taxi trips were recorded?
-- Which pickup zones have the highest trip volume?
-- Which zones generate the most revenue?
-- What hours have the highest traffic?
-- How does trip volume change over time?
-- What is the average trip speed?
-- What is the average trip duration?
-
----
-
-## Machine Learning & Analytics
-
-The repository also contains scripts related to additional analytics and machine learning experiments, including:
-
-```text
-sparkml_clustering.py
-train_xgboost.py
-train_trip_models.py
-train_trip_models_no_distance.py
-```
-
-These scripts support further analysis of NYC taxi mobility patterns and trip-related predictions.
-
----
-
-## Key Features
-
-- Distributed storage using HDFS
-- Distributed processing using Apache Spark
-- Automated ETL orchestration with Airflow
-- Analytical querying with ClickHouse
-- Interactive visualization using Apache Superset
-- NYC Taxi Zone name mapping
-- Dockerized Big Data environment
-- Reproducible data pipeline
-- Git-based version control
-
----
-
-## Future Improvements
-
-Possible future improvements include:
-
-- Real-time streaming using Kafka
-- Real-time dashboards
-- More advanced machine learning models
+- Real-time streaming with Kafka and live dashboards
 - Geographic visualization using NYC maps
 - Automated model retraining
 - Cloud deployment
 - Additional traffic and mobility datasets
 
----
+## Authors
 
-## Author
+Farouk Sameh Mostafa, Mostafa Ahmed, Ziad Sherif, Gaber Tahoon
 
-**Farouk Sameh Mostafa**
-
-**Mostafa Ahmed**
-
-**Ziad Sherif**
-
-**Gaber Tahoon**
-
----
-
-## Repository
-
-GitHub:
-
-https://github.com/ziad375/urban-traffic-mobility-analytics
+Repository: https://github.com/ziad375/urban-traffic-mobility-analytics

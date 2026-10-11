@@ -1,4 +1,10 @@
-﻿from pyspark.sql import SparkSession
+"""
+NOT USED by the pipeline (kept here for reference).
+
+Only prints the chronological train/test split of the zone_hour data (row counts and
+samples); it writes nothing. The same split is done inside ml/train_zone_hour_models.py.
+"""
+from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 spark = SparkSession.builder.appName("XGBoostDataPreparation").getOrCreate()

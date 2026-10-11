@@ -1,4 +1,19 @@
-﻿import os
+"""
+Train XGBoost forecasting models on the zone/hour aggregates:
+  - trips          (number of trips in a pickup zone during an hour)
+  - total_revenue  (total fare collected in that zone-hour)
+
+Input : hdfs://namenode:8020/data/nyc/processed/zone_hour   (written by etl/etl_clean.py)
+Output: /tmp/xgboost_models  (copy to models/zone_hour_models)
+Split : temporal holdout (train < 2025-10-01 <= test), randomly sampled to fit in memory.
+Targets are trained on log1p() and converted back with expm1() for evaluation.
+
+Run (inside the Spark container; needs xgboost, pandas and numpy installed there):
+  spark-submit --master spark://spark-master:7077 train_zone_hour_models.py
+
+(Formerly train_xgboost.py.)
+"""
+import os
 import json
 import numpy as np
 import pandas as pd
@@ -19,6 +34,7 @@ SOURCE = "hdfs://namenode:8020/data/nyc/processed/zone_hour"
 OUT = "/tmp/xgboost_models"
 os.makedirs(OUT, exist_ok=True)
 
+# ---------- 1) Read + basic cleaning + calendar features ----------
 print("Reading zone_hour...")
 df = spark.read.parquet(SOURCE)
 
@@ -55,6 +71,8 @@ df = (
       )
 )
 
+# ---------- 2) Lag features ----------
+# Previous recorded hour of the same zone (trips, revenue, and the gap in hours).
 w = Window.partitionBy("pu_zone").orderBy("ts")
 
 df = (
@@ -82,6 +100,7 @@ features = [
     "prev_trips", "prev_revenue", "hours_since_prev"
 ]
 
+# ---------- 3) Temporal split + sampling ----------
 train_spark = df.filter(F.col("pickup_date") < F.lit("2025-10-01"))
 test_spark = df.filter(F.col("pickup_date") >= F.lit("2025-10-01"))
 
@@ -106,6 +125,7 @@ if len(train) < 1000 or len(test) < 1000:
 X_train = train[features].astype("float32")
 X_test = test[features].astype("float32")
 
+# ---------- 4) Train one model per target, evaluate, save ----------
 results = {}
 
 for target in ["trips", "total_revenue"]:

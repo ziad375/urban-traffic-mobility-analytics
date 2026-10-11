@@ -1,4 +1,10 @@
-﻿services:
+# NYC Traffic & Mobility Analytics - local Big Data stack.
+# HDFS (storage) + Spark (processing) + Airflow (orchestration)
+# + ClickHouse (analytics DB) + Superset (dashboards).
+# Start with:  docker compose up -d
+# Superset needs superset/.env first (copy superset/.env.example).
+
+services:
 
   # =========================
   # HDFS
@@ -84,10 +90,6 @@
   # Airflow Database
   # =========================
 
-      # =========================
-  # Airflow Database
-  # =========================
-
   postgres:
     image: postgres:15
     container_name: airflow-postgres
@@ -129,8 +131,7 @@
       - "8085:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./etl_clean.py:/opt/airflow/etl_clean.py:ro
-      - ./etl_clean_staging.py:/opt/airflow/etl_clean_staging.py:ro
+      - ./etl/etl_clean.py:/opt/airflow/etl_clean.py:ro
       - ./hadoop-config:/opt/hadoop/etc/hadoop:ro
     command: >
       bash -c "

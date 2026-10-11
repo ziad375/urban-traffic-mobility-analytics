@@ -1,4 +1,12 @@
-﻿
+"""
+Airflow DAG: nyc_traffic_pipeline (manual trigger, no schedule).
+
+Runs the Spark ETL (etl_clean.py) with isolated per-run output folders in HDFS:
+  check_hdfs -> check_spark -> preflight_staging -> run_etl -> validate_staging
+
+Each run writes to hdfs://namenode:8020/data/nyc/staging/runs/<run_id>/ so a failed or
+repeated run never overwrites earlier output.
+"""
 from datetime import datetime, timedelta
 import os
 import re
@@ -17,6 +25,7 @@ SPARK_MASTER = "spark://spark-master:7077"
 
 
 def output_base(run_id):
+    """Build the per-run HDFS output folder from the Airflow run_id (made path-safe)."""
     safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", run_id).strip("._-")
     if not safe_id:
         raise ValueError("Invalid Airflow run_id")
@@ -66,6 +75,7 @@ def run_spark_check(script_text, app_name):
 
 
 def preflight_staging(**context):
+    """Fail early if this run's output already exists or the raw input is empty."""
     base = output_base(context["run_id"])
     script = f'''
 from pyspark.sql import SparkSession
@@ -95,6 +105,7 @@ finally:
 
 
 def validate_staging(**context):
+    """After the ETL, check that trips/ and zone_hour/ exist and contain rows."""
     base = output_base(context["run_id"])
     script = f'''
 from pyspark.sql import SparkSession
@@ -155,7 +166,7 @@ with DAG(
             "--deploy-mode client "
             "--conf spark.driver.host=airflow "
             "--conf spark.driver.bindAddress=0.0.0.0 "
-            "/opt/airflow/etl_clean_staging.py"
+            "/opt/airflow/etl_clean.py"
         ),
         execution_timeout=timedelta(hours=3),
     )
@@ -165,5 +176,6 @@ with DAG(
         python_callable=validate_staging,
     )
 
+    # Task order: infrastructure checks -> preflight -> ETL -> output validation
     check_hdfs_task >> check_spark_task >> preflight_task
     preflight_task >> run_etl_task >> validate_task
